@@ -1,0 +1,171 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+library(spData)
+library(ggpmisc)
+
+set.seed(5)
+```
+
+```{r}
+redlining = read_csv(here::here("week_4", "data", "redlining.csv")) %>% 
+  left_join(us_states_df %>% rename(name = state)) %>% 
+  janitor::clean_names()
+```
+
+```{r}
+ggplot(redlining) +
+  geom_boxplot(aes(region, percent)) +
+  geom_point(aes(region, percent)) +
+  theme_bw()
+```
+
+```{r}
+ggplot(redlining) +
+  geom_point(aes(area, percent)) +
+  theme_bw()
+
+```
+
+```{r}
+ggplot(redlining) +
+  geom_point(aes(poverty_level_10, percent)) +
+  theme_bw()
+```
+
+```{r}
+ggplot(redlining, aes(poverty_level_10, percent)) +
+  geom_point() +
+  theme_bw()
+```
+
+```{r}
+
+```
+
+### Data Splitting
+
+```{r}
+split <- initial_split(redlining, prop = .7)
+
+train <- training(split)
+test <- testing(split)
+
+folds <- vfold_cv(train, v = 5, repeats = 2)
+```
+
+### Recipe Specification
+
+```{r}
+recipe <- recipe(percent ~ region + area + total_pop_10 + median_income_10 + poverty_level_10, data = train) %>%
+  step_normalize(all_numeric_predictors()) %>% 
+  step_integer(all_nominal_predictors()) %>% 
+  step_interact(terms = ~total_pop_10:median_income_10) %>% 
+  step_interact(terms = ~total_pop_10:poverty_level_10) %>% 
+  step_interact(terms = ~poverty_level_10:median_income_10) 
+
+# ~indicates on the predictor side :on the output side
+```
+
+### Model: Tuned Linear Regression
+
+```{r}
+lm_model <- linear_reg(penalty = tune(), mixture = tune()) %>% 
+  set_engine("glmnet") %>% 
+  set_mode("regression")
+```
+
+```{r}
+lm_wflw <- workflow() %>% #order does matter
+  add_model(lm_model) %>% #order does not matter
+  add_recipe(recipe) #order does not matter
+
+lm_wflw
+```
+
+```{r}
+?tune_grid
+```
+
+```{r, eval = FALSE}
+lm_cv_tune <- lm_wflw %>% 
+  tune_grid(resamples = folds, grid = 5)
+```
+
+```{r}
+?collect_metrics #from tune
+```
+
+```{r}
+collect_metrics(lm_cv_tune)
+```
+
+```{r}
+autoplot(lm_cv_tune) +
+  theme_bw() +
+  labs(x = "Parameter value", 
+       y = "Performance Metrics")
+```
+
+#### Finalize workflow
+
+```{r}
+?show_best
+?finalize_workflow()
+```
+
+```{r}
+lm_best <- show_best(lm_cv_tune, n = 1, metric = "rmse")
+
+lm_best
+
+lm_final <- finalize_workflow(lm_wflw, 
+                             select_best(lm_cv_tune, metric = "rmse"))
+
+lm_final
+```
+
+### Model Fitting
+
+```{r, include=FALSE}
+ # fit the data to the training data
+lm_fit <- fit(lm_final, train)
+```
+
+```{r, include=FALSE}
+train_predict <- predict(object = lm_fit, new_data = train) %>% 
+                           bind_cols(train)
+test_predict <- predict(object = lm_fit, new_data = test) %>% 
+                           bind_cols(test)
+
+```
+
+```{r}
+train_metrics <- train_predict %>% 
+  metrics(percent, .pred)
+train_metrics
+
+test_metrics <- test_predict %>% 
+  metrics(percent, .pred)
+test_metrics
+```
+
+### Visualization
+
+```{r}
+ggplot(test_predict, aes(percent, .pred)) + geom_point() +
+  stat_poly_line() +
+  stat_poly_eq(use_label("eq")) +
+  stat_poly_eq(label.y = 0.9)
+
+ggplot(train_predict, aes(percent, .pred)) + geom_point() +
+  stat_poly_line() +
+  stat_poly_eq(use_label("eq")) +
+  stat_poly_eq(label.y = 0.9)
+
+
+#rmse is best way to look at model fit
+```
+
