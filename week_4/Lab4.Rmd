@@ -210,11 +210,11 @@ Let's move forward with this single most accurate model.
 > Question 11: Compute the confusion matrix and overall fraction of correct predictions by the model.
 
 ```{r}
-pred_class <- predict(cv_model2, trees_train)
+pred_class <- predict(cv_model4, trees_train)
 # making confusion matrix
 confusionMatrix(
-  data = relevel(pred_class, ref = 'Yes'),
-  reference = 1)
+  data = relevel(pred_class, ref = '1'),
+  reference = relevel(trees_train$yr1status, ref = "1"))
 
 ```
 
