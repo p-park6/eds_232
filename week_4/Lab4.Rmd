@@ -11,6 +11,7 @@ library(tidyverse)
 library(skimr)
 library(tidymodels)
 library(caret)
+library(corrplot)
 ```
 
 ## Lab 4: Fire and Tree Mortality
@@ -29,46 +30,195 @@ trees_dat<- read_csv(file = "https://raw.githubusercontent.com/MaRo406/eds-232-m
 
 > Question 1: Recode all the predictors to a zero_based integer form
 
+```{r}
+#specify and prep recipe
+trees_rec <- recipe(yr1status ~., data = trees_dat) %>%
+  step_integer(all_predictors(), zero_based = T) %>%
+  prep(trees_dat) %>% 
+  bake(trees_dat)
+
+```
+
+
 ### Data Splitting
 
 > Question 2: Create trees_training (70%) and trees_test (30%) splits for the modeling
->
+
+```{r}
+set.seed(123)  # for reproducibility 
+trees_split <- initial_split(trees_rec, prop = .7)
+trees_train <- training(trees_split)
+trees_test  <- testing(trees_split)
+```
+
+
 > Question 3: How many observations are we using for training with this split?
+
+```{r}
+tree_train_ob <- nrow(trees_train)
+print(tree_train_ob)
+```
+
+**Answer**: We have `r tree_train_ob` observations that we are using for the training data.
+
 
 ### Simple Logistic Regression 
 
 Let's start our modeling effort with some simple models: one predictor and one outcome each.
 
 > Question 4: Choose the three predictors that most highly correlate with our outcome variable for further investigation.
->
+
+```{r}
+# Obtain correlation matrix
+corr_mat <- cor(trees_rec %>% 
+                  # Drop columns that are not really informative
+                  select(-c(`...1`)))
+
+# Make a correlation plot between the variables
+corrplot(corr_mat, method = "shade", shade.col = NA, tl.col = "black", tl.srt = 45, addCoef.col = "black", cl.pos = "n", order = "original")
+
+```
+
+
+**Answer**: The three predictors that most highly correlate with our outcome variables `yr1status` are `CVS_percent`, `BCHM_m`, and `DBH_cm`.
+
 > Question 5: Use glm() to fit three simple logistic regression models, one for each of the predictors you identified.
+
+```{r}
+#CVS_percent
+model_CVS <- glm(data = trees_rec, yr1status ~ CVS_percent, family = "binomial")
+  
+#BCHM_m
+model_BCHM <- glm(data = trees_rec, yr1status ~ BCHM_m, family = "binomial")
+
+#DBH_cm
+model_DBH <- glm(data = trees_rec, yr1status ~ DBH_cm, family = "binomial")
+
+```
 
 ### Interpret the Coefficients 
 
 We aren't always interested in or able to interpret the model coefficients in a machine learning task. Often predictive accuracy is all we care about.
 
 > Question 6: That said, take a stab at interpreting our model coefficients now.
->
+
+```{r}
+broom::tidy(model_CVS)
+broom::tidy(model_BCHM)
+broom::tidy(model_DBH)
+(coef(model_CVS))
+(coef(model_BCHM))
+(coef(model_DBH))
+```
+
+**Answer**: Looking at all three predictors, we know that they are all significant in impacting the `yr1status` because of how small the p-value is for all three of them. If we want to interpret the coefficients, every time the `CVS_percent` goes up by one unit, the `yr1status` goes up by 0.0774. Every time the `BCHM_m` goes up by one unit, the `yr1status` goes up by 0.00625. Every time the `DBH_cm` goes up by one unit, the `yr1status` goes down by -0.00370.
+
+
 > Question 7: Now let's visualize the results from these models. Plot the fit to the training data of each model.
 
-### Multiple Logistic Regression
+```{r}
+ggplot(trees_train, aes(x = CVS_percent, y = yr1status)) + geom_point() +
+  stat_smooth(method = "glm", se = T, method.args = list(family = binomial)) +
+  labs(title = "Logistic Regression between pre-fire crown volume and tree status one year post-fire",
+       x = "Percent of pre-fire crown volumn",
+       y = "Tree status one year post-fire")
+
+ggplot(trees_train, aes(x = BCHM_m, y = yr1status)) + geom_point() +
+  stat_smooth(method = "glm", se = T, method.args = list(family = binomial)) +
+  labs(title = "Logistic Regression between Trunk Diameter and tree status one year post-fire",
+       x = "Trunk Diameter (cm)",
+       y = "Tree status one year post-fire")
+
+ggplot(trees_train, aes(x = DBH_cm, y = yr1status)) + geom_point() +
+  stat_smooth(method = "glm", se = T, method.args = list(family = binomial)) +
+  labs(title = "Logistic Regression between Maximum bark char and tree status one year post-fire",
+       x = "Maximum bark char (m)",
+       y = "Tree status one year post-fire")
+```
+
+*Note*: It's interesting to see that for the lm line for the BCHM_m, it follows a near perfect logistic line. The regression line for CVS_percent leans more towards zero as well as the DBH_cm graph.
+
+
+### Multiple Logistic Regression (chapter 5)
 
 Let's not limit ourselves to a single-predictor model. More predictors might lead to better model performance.
 
 > Question 8: Use glm() to fit a multiple logistic regression called "logistic_full", with all three of the predictors included. Which of these are significant in the resulting model?
+
+```{r}
+logistic_full <- glm(data = trees_rec, yr1status ~ DBH_cm + CVS_percent + BCHM_m, family = "binomial")
+broom::tidy(logistic_full)
+```
+
+**Answer**: While all of these predictors are significant in the resulting model, CVS_percent is more significant than the other predictors as the p_value is a near 0 as seen on the table. The estimate coefficient is also very high compared to the other predictors coefficients.
+
 
 ### Estimate Model Accuracy
 
 Now we want to estimate our model's generalizability using resampling.
 
 > Question 9: Use cross validation to assess model accuracy. Use caret::train() to fit four 10-fold cross-validated models (cv_model1, cv_model2, cv_model3, cv_model4) that correspond to each of the four models we've fit so far: three simple logistic regression models corresponding to each of the three key predictors (CVS_percent, DBH_cm, BCHM_m) and a multiple logistic regression model that combines all three predictors.
->
+
+```{r, warning=FALSE}
+#change the outcomes to factors
+trees_train$yr1status <- as.factor(trees_train$yr1status)
+
+#create the cross-validation modes for all predictors
+#DBH_cm
+cv_model1 <- train(yr1status~as.factor(DBH_cm),
+                   data = trees_train,
+                   method = 'glm',
+                   family = 'binomial',
+                   trControl = trainControl(method = 'cv', number = 10))
+
+#CVS_percent
+cv_model2 <- train(yr1status~ CVS_percent,
+                   data = trees_train,
+                   method = 'glm',
+                   family = 'binomial',
+                   trControl = trainControl(method = 'cv', number = 10))
+
+#BCHM_m
+cv_model3 <- train(yr1status ~BCHM_m,
+                   data = trees_train,
+                   method = 'glm',
+                   family = 'binomial',
+                   trControl = trainControl(method = 'cv', number = 10))
+
+#DBH_cm, CVS_percent, and BCHM_m
+cv_model4 <- train(yr1status ~DBH_cm + CVS_percent + BCHM_m,
+                   data = trees_train,
+                   method = 'glm',
+                   family = 'binomial',
+                   trControl = trainControl(method = 'cv', number = 10))
+
+```
+
 > Question 10: Use caret::resamples() to extract then compare the classification accuracy for each model. (Hint: resamples() wont give you what you need unless you convert the outcome variable to factor form). Which model has the highest accuracy?
+
+```{r}
+summary(resamples(list(model1 = cv_model1,
+                       model2 = cv_model2,
+                       model3 = cv_model3,
+                       model4 = cv_model4)))
+```
+
+**Answer**: best model is model 4
 
 Let's move forward with this single most accurate model.
 
 > Question 11: Compute the confusion matrix and overall fraction of correct predictions by the model.
->
+
+```{r}
+pred_class <- predict(cv_model2, trees_train)
+# making confusion matrix
+confusionMatrix(
+  data = relevel(pred_class, ref = 'Yes'),
+  reference = 1)
+
+```
+
+
 > Question 12: Explain what the confusion matrix is telling you about the types of mistakes made by logistic regression.
 >
 > Question 13: What is the overall accuracy of the model? How is this calculated?
