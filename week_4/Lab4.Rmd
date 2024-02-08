@@ -24,7 +24,7 @@ Outcome variable: *yr1status* = tree status (0=alive, 1=dead) assessed one year 
 
 Predictors: *YrFireName, Species, Genus_species, DBH_cm, CVS_percent, BCHM_m, BTL* (Information on these variables available in the database metadata ([link](https://www.fs.usda.gov/rds/archive/products/RDS-2020-0001-2/_metadata_RDS-2020-0001-2.html))).
 
-```{r}
+```{r, message=FALSE}
 trees_dat<- read_csv(file = "https://raw.githubusercontent.com/MaRo406/eds-232-machine-learning/main/data/trees-dat.csv")
 ```
 
@@ -55,6 +55,7 @@ trees_test  <- testing(trees_split)
 > Question 3: How many observations are we using for training with this split?
 
 ```{r}
+#find how many observations we have
 tree_train_ob <- nrow(trees_train)
 print(tree_train_ob)
 ```
@@ -103,12 +104,13 @@ We aren't always interested in or able to interpret the model coefficients in a 
 > Question 6: That said, take a stab at interpreting our model coefficients now.
 
 ```{r}
+#show the model coefficients
 broom::tidy(model_CVS)
 broom::tidy(model_BCHM)
 broom::tidy(model_DBH)
-(coef(model_CVS))
-(coef(model_BCHM))
-(coef(model_DBH))
+# (coef(model_CVS))
+# (coef(model_BCHM))
+# (coef(model_DBH))
 ```
 
 **Answer**: Looking at all three predictors, we know that they are all significant in impacting the `yr1status` because of how small the p-value is for all three of them. If we want to interpret the coefficients, every time the `CVS_percent` goes up by one unit, the `yr1status` goes up by 0.0774. Every time the `BCHM_m` goes up by one unit, the `yr1status` goes up by 0.00625. Every time the `DBH_cm` goes up by one unit, the `yr1status` goes down by -0.00370.
@@ -117,18 +119,21 @@ broom::tidy(model_DBH)
 > Question 7: Now let's visualize the results from these models. Plot the fit to the training data of each model.
 
 ```{r}
+#logistic regression plot for CVS_percent
 ggplot(trees_train, aes(x = CVS_percent, y = yr1status)) + geom_point() +
   stat_smooth(method = "glm", se = T, method.args = list(family = binomial)) +
   labs(title = "Logistic Regression between pre-fire crown volume and tree status one year post-fire",
        x = "Percent of pre-fire crown volumn",
        y = "Tree status one year post-fire")
 
+#logistic regression plot for BCHM_m
 ggplot(trees_train, aes(x = BCHM_m, y = yr1status)) + geom_point() +
   stat_smooth(method = "glm", se = T, method.args = list(family = binomial)) +
   labs(title = "Logistic Regression between Trunk Diameter and tree status one year post-fire",
        x = "Trunk Diameter (cm)",
        y = "Tree status one year post-fire")
 
+#logistic regression plot for DBH_cm
 ggplot(trees_train, aes(x = DBH_cm, y = yr1status)) + geom_point() +
   stat_smooth(method = "glm", se = T, method.args = list(family = binomial)) +
   labs(title = "Logistic Regression between Maximum bark char and tree status one year post-fire",
@@ -146,6 +151,7 @@ Let's not limit ourselves to a single-predictor model. More predictors might lea
 > Question 8: Use glm() to fit a multiple logistic regression called "logistic_full", with all three of the predictors included. Which of these are significant in the resulting model?
 
 ```{r}
+#multiple logistic regression on all variables we are interested in
 logistic_full <- glm(data = trees_rec, yr1status ~ DBH_cm + CVS_percent + BCHM_m, family = "binomial")
 broom::tidy(logistic_full)
 ```
@@ -165,7 +171,7 @@ trees_train$yr1status <- as.factor(trees_train$yr1status)
 
 #create the cross-validation modes for all predictors
 #DBH_cm
-cv_model1 <- train(yr1status~as.factor(DBH_cm),
+cv_model1 <- train(yr1status~DBH_cm,
                    data = trees_train,
                    method = 'glm',
                    family = 'binomial',
@@ -197,19 +203,21 @@ cv_model4 <- train(yr1status ~DBH_cm + CVS_percent + BCHM_m,
 > Question 10: Use caret::resamples() to extract then compare the classification accuracy for each model. (Hint: resamples() wont give you what you need unless you convert the outcome variable to factor form). Which model has the highest accuracy?
 
 ```{r}
-summary(resamples(list(model1 = cv_model1,
+#print the summary of all models to see r squared, RSME
+summary(caret::resamples(list(model1 = cv_model1,
                        model2 = cv_model2,
                        model3 = cv_model3,
                        model4 = cv_model4)))
 ```
 
-**Answer**: best model is model 4
+**Answer**: The best model is model four. There are two models that do look good, which is model 2, using the `CVS_percent` being regressed on and model 4, using all three variables that are being regressed on. I picked model four to be the best model as on average, the accuracy was higher for model 4.
 
 Let's move forward with this single most accurate model.
 
 > Question 11: Compute the confusion matrix and overall fraction of correct predictions by the model.
 
 ```{r}
+#create predict for cv_model4 on training data
 pred_class <- predict(cv_model4, trees_train)
 # making confusion matrix
 confusionMatrix(
@@ -220,13 +228,33 @@ confusionMatrix(
 
 
 > Question 12: Explain what the confusion matrix is telling you about the types of mistakes made by logistic regression.
->
+
+**Answer**: Looking at the confusion matrix, It tells us that more false errors were made verses the false positive errors. The confusion matrix tells us that we have 1595 that are false negative and 847 that are false positives. This tells us that the model predicts more tree burned when these trees actually survived, which is a mistake that is made with the logistic regression. Other ways we can see what mistakes were made by logistic regression are looking at the sensitivity and specificity. However, in our training model, both are high meaning we can conclude that the model does well predicting cases of trees that did and did not burn.
+
 > Question 13: What is the overall accuracy of the model? How is this calculated?
+
+**Answer**: The overall accuracy of the training model is around 90% or 0.9033. This is calculated by dividing the total number of correct samples by the total number of samples. We can also test how well the total accuracy is in the model by looking at the no information rate. If our accuracy rate is above the no information rate, our model is more likely to have a better ROC curve. In this case, our no information rate is about 72% or 0.7169. Since our overall accuracy is well above our overall accuracy, we can trust that we have a good model.
 
 ### Test Final Model
 
 Alright, now we'll take our most accurate model and make predictions on some unseen data (the test data).
 
 > Question 14: Now that we have identified our best model, evaluate it by running a prediction on the test data, trees_test.
->
+
+```{r}
+#create predict for cv_model4 on testing data
+test_predict <- predict(cv_model4, trees_test)
+
+#make confusion matrix
+confusionMatrix(
+  data = relevel(test_predict, ref = '1'),
+  reference = relevel(as.factor(trees_test$yr1status), ref = "1"))
+
+
+```
+
 > Question 15: How does the accuracy of this final model on the test data compare to its cross validation accuracy? Do you find this to be surprising? Why or why not?
+
+**Answer**: Looking at the confusion matrix, the overall accuracy of this model is about 90% or 0.8999. I find this surprising because this is saying that the model is very accurate in its prediction. This accuracy for the final model is almost the same as the model used for the training data. Looking also at the sensitivity and specificity rate, I am surprised of the high rate. I would have assumed that it would have gone down, but with it being in the high 80's, I can have more confidence that the this is a strong model. Another thing that I was surprised was the no information rate being well below our accuracy rate. In testing the final model, I get a no information rate of around 71 % or 0.7148. Because this is well below our overall accuracy percent, this tells me that our model is strong, meaning if we plot our ROC curve, we would get a high AUC which we want.
+
+
