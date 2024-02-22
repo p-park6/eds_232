@@ -50,4 +50,6 @@ rsconnect/
 
 week_4/data
 
-week_5/Lab5.Rmd
+week_5/spotify_client_secret.R
+week_5/spotify_client_id.R
+
