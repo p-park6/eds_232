@@ -57,8 +57,10 @@ Today, we are going to use all habitats!
 
 ```{r}
 
-fish_clean = read_csv(here("week_6", "data", "fish_clean(1).csv")) %>% 
-  mutate(habitat = as.factor(habitat))
+fish_clean = read_csv(here("week_6", "data", "fish_clean(1).csv"))
+
+  mutate(angaus = as.factor(angaus),
+         method = as.factor(method))
 
 ```
 
