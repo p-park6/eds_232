@@ -49,6 +49,7 @@ po/*~
 rsconnect/
 
 week_4/data
+week_7/rda
 
 week_5/spotify_client_secret.R
 week_5/spotify_client_id.R
