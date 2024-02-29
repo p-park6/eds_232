@@ -1,0 +1,239 @@
+---
+title: "Clustering Lab"
+author: "Mateo Robbins"
+date: "2024-02-29"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r, echo = FALSE, eval = TRUE, message=FALSE}
+library(tidyverse) 
+library(cluster) #cluster analysis
+library(factoextra) #cluster visualization
+library(tidymodels) #simulation 
+library(readr) #read data
+library(RColorBrewer)# Color palettes
+
+```
+
+We'll start off with some simulated data that has a structure that is amenable to clustering analysis.
+
+```{r init_sim}
+#Set the parameters of our simulated data
+set.seed(101)
+
+cents <- tibble(
+  cluster = factor(1:3),
+  num_points = c(100,150,50),
+  x1 = c(5, 0, -3),
+  x2 = c(-1, 1, -2)
+)
+```
+
+
+```{r sim}
+#Simulate the data by passing n and mean to rnorm using map2()
+#map2 is using two objects to create a map
+# in this case, it is passing the arguments (num_points and x1 or x2 to rnorm)
+
+labelled_pts <- 
+  cents %>% 
+  mutate(
+    x1 = map2(num_points, x1, rnorm),
+    x2 = map2(num_points, x2, rnorm)
+  ) %>% 
+  select(-num_points) %>% 
+           unnest(cols=c(x1, x2))
+
+ggplot(labelled_pts, aes(x1, x2, color = cluster)) +
+  geom_point(alpha = 0.4)
+```
+
+
+```{r kmeans}
+points <- 
+  labelled_pts %>% 
+  select(-cluster)
+
+kclust <- kmeans(points, centers = 3, n = 25)
+kclust
+
+#reduces the output sensitivity
+#best practices for finding the best n?: maybe tuning or a interative process but we dont know yet
+
+```
+
+```{r syst_k}
+#now let's try a systematic method for setting k
+#this is more like tuning since we are trying to find optimal number for k
+
+kclusts <- 
+  tibble(k = 1:9) %>% 
+  mutate(kclust = map(k, ~kmeans(points, .x)), #not taking two separate objects  .x is where k will be passed to. reading in a single list of k values
+         augmented = map(kclust, augment, points)
+  )
+
+#we produced a list, but did not do any unnesting yet
+```
+
+```{r assign}
+#append cluster assignment to tibble
+assignments <- kclusts %>% 
+  unnest(cols = c(augmented))
+
+#unnest and what it does. Before it is 'nested' because it is a list and we cant see it. but we unnest to see what is in that column
+```
+
+```{r plot_9_clust}
+#Plot each model 
+#can color each point by what cluster they are in because we have already coded for that
+p1 <- 
+  ggplot(assignments, aes(x = x1, y = x2)) +
+  geom_point(aes(color = .cluster), alpha = 0.8) +
+  scale_color_brewer(palette = "Set1") +
+  facet_wrap(~k)
+
+p1
+
+```
+
+```{r elbow}
+#Use a clustering function from {factoextra} to plot  total WSSs
+#doing a shortcut of examining the range of k
+
+fviz_nbclust(points, kmeans, "wss") #wss is a default number of times it will run
+ 
+```
+
+
+```{r more_fviz}
+#Another plotting method
+
+k3 <- kmeans(points, centers = 3, nstart = 25)
+
+p3 <- fviz_cluster(k3, geom = "point", data = points) + 
+  ggtitle("k=3")
+
+p3
+
+```
+
+
+## In-class assignment!
+
+Now it's your turn to partition a dataset.  For this round we'll use data from Roberts et al. 2008 on bio-contaminants in Sydney Australia's Port Jackson Bay.  The data are measurements of metal content in two types of co-occurring algae at 10 sample sites around the bay.
+
+```{r data, message=FALSE}
+#Read in data
+metals_dat <- readr::read_csv(here::here("week_8/data/Harbour_metals.csv"))
+
+# Inspect the data
+#View(metals_dat)
+
+#Grab pollutant variables
+metals_dat2 <- metals_dat[, 4:8] 
+```
+1. Start with k-means clustering - kmeans().  You can start with fviz_nbclust() to identify the best value of k. Then plot the model you obtain with the optimal value of k. 
+
+```{r}
+# km_metal <- kmeans(metals_dat2, centers = 3, nstart = 25)
+
+#k-means clustering, find with fviz_nbclust() to find most optimal value of k
+km_plot <- fviz_nbclust(metals_dat2, kmeans, "wss") + 
+  ggtitle("Optimal K")
+
+#plot the cluster line graph
+km_plot
+
+#there are techically two Ks, 3 or 5
+
+#another way to visualize
+k3 <- kmeans(metals_dat2, centers = 3, nstart = 25)
+k5 <- kmeans(metals_dat2, centers = 5, nstart = 25)
+
+#create the clusters
+p3 <- fviz_cluster(k3, geom = "point", data = metals_dat2) + 
+  ggtitle("k=3")
+p5 <- fviz_cluster(k5, geom = "point", data = metals_dat2) + 
+  ggtitle("k=5")
+
+#print the cluster graphs
+p3
+p5
+```
+
+
+Do you notice anything different about the spacing between clusters?  Why might this be?
+
+**Answer**: I graphed both clusters that have k = 3 and k = 5. In this case I will focus on k = 3. In this case, when I graphed that spacing between the clusters, I see some of the clusters overlap each other. A couple of the clusters that is related to group 3 can be related to group 2. This is because the data is in 5-D since it has 5 types of columns we are comparing. We are only looking at it in 2-D, meaning that there will be overlap.
+
+Run summary() on your model object.  Does anything stand out?
+
+**Answer**: In this questions, I asked Mateo for assistance and he mentioned that we can look at the variable only. I will be doing my analysis of that variable on this section. From this, we see that the Cu and Mn are very different between the three clusters. I can interpret this as the range for these metals in kelp have a very big range. Some kelp samples have low concentrations of those metal while other kelp samples have a large concentration of those metals. All other metals are around the same range, meaning that all kelp have very similar amounts of kelp metal concentration range for all of those.
+
+```{r}
+#look at results for kmeans for k = 3
+k3
+
+#look at the summary of the k3 model
+summary(k3)
+```
+
+
+2. Good, now let's move to hierarchical clustering that we saw in lecture. The first step for that is to calculate a distance matrix on the data (using dist()). Euclidean is a good choice for the distance method.
+
+```{r}
+#find the distance between the datapoint using dist() function
+metal_dist <- dist(metals_dat2, method = "euclidean")
+
+#print the distance results
+#metal_dist
+```
+
+
+2. Use tidy() on the distance matrix so you can see what is going on. What does each row in the resulting table represent?
+
+**Answer**: Each row is an observation of a datapoint in the dataset. The first column, which is item1 in this case, is what cluster it is a part of. The second column, which is item2 in this case, is the observation or id of that data point. The third column, which is distance in this case, shows the distance of that point from the centroid.
+
+```{r}
+#tidy the data into a dataframe
+metal_tidy <- tidy(metal_dist)
+
+#View(metal_tidy)
+```
+
+
+3. Then apply hierarchical clustering with hclust().
+
+```{r}
+#use `hclust` to apply hierarchical clustering
+metal_hclust <- hclust(metal_dist, method = "complete")
+
+#view the results from hclust
+metal_hclust
+```
+
+
+4. Now plot the clustering object. You can use something of the form plot(as.dendrogram()).  Or you can check out the cool visual options here: https://rpubs.com/gaston/dendrograms
+
+```{r}
+#plot the hcluster with the metal data using as.hclust
+plot(as.hclust(metal_hclust))
+
+# plot the hcluster with the metal data using as.dendrogram
+#plot(as.dendrogram(metal_hclust))
+
+#both show the same thing, just a different way to visualize the content
+```
+
+
+How does the plot look? Do you see any outliers?  How can you tell?  
+
+**Answer**: The plot looks fairly well grouped. in this plot, there are barely any outliers found on the Dendrogram. If I had to choose any outliers, I would choose observation 51 as it branches off fairly faster than the other observations. I would conclude that observation 51 is a bit different than the other observations and joins the tree 'later' than the other observations. All other observations, however, do not look like they are outliers in the dengrogram.
+
+
+
+
+
+

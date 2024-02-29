@@ -5,7 +5,7 @@ date: "2023-03-01"
 output: html_document
 ---
 
-We are using the variables to predict presense or absence of the species (eel)
+We are using the variables to predict presence or absence of the species (eel)
 
 note on mtry:needs to be given the full set of features to see what it needs to train on
 
@@ -97,7 +97,8 @@ eel_xgb_workflow = workflow() %>% #create workflow
   add_model(eel_xgb_model) %>% #add boosted trees model
   add_recipe(eel_recipe) #add recipe
 
-eel_xgb_workflow
+#look at workflow
+#eel_xgb_workflow
 ```
 
 2.  Set up a grid to tune your model by using a range of learning rate parameter values: expand.grid(learn_rate = seq(0.0001, 0.3, length.out = 30))
@@ -109,15 +110,7 @@ Note:
 - giving a set of value to define
 
 ```{r}
-#tune the model using created grid
-# system.time(
-#   eel_xbg_tune <- eel_xgb_workflow %>% 
-#     tune_grid(resamples = cv_folds, grid = 10) %>% 
-#     expand.grid(learn_rate = seq(0.0001, 0.3, length.out = 30))
-# )
-
-
-###ASK ALLIE QUESTION
+#create the grid to tune for the learning rate parameter
 grid_1 <- expand.grid(learn_rate = seq(0.0001, 0.3, length.out = 30))
 
 #tune the model using created grid
@@ -126,13 +119,16 @@ system.time(
     tune_grid(resamples = cv_folds, grid = grid_1)
 )
 
-save(eel_xbg_tune, file = "eel_xbg_tune.rda")
+#save(eel_xbg_tune, file = "rda/eel_xbg_tune.rda")
 
-load(file = here::here("week_7",  "eel_xbg_tune.rda"))
+#load save rda file
+load(file = here::here("week_7", "rda", "eel_xbg_tune.rda"))
 
-eel_xbg_tune
+#view tuned table dataset to see if we have metrics
+#eel_xbg_tune
 ```
- The time it took for this to run was about 11.7 seconds
+ 
+*Answer*: To tune the learning grid, the time it took for this to run was about 12 seconds.
 
 3.  Show the performance of the best models and the estimates for the learning rate parameter values associated with each.
 
@@ -140,60 +136,31 @@ eel_xbg_tune
 #look at performance of model
 autoplot(eel_xbg_tune)
 
+#find the best model from the tuned models
 tree_learn <- show_best(eel_xbg_tune, n = 1)
 
+#print out the best model
 tree_learn
-
-
-
-
-# #finalize work flow for both metrics
-# rf_final_acc <- finalize_workflow(eel_xgb_workflow, select_best(eel_xbg_tune_2, metric = "accuracy"))
-# 
-# rf_final_roc <- finalize_workflow(eel_xgb_workflow, select_best(eel_xbg_tune_2, metric = "roc_auc"))
-
-# #print out results
-# rf_final_acc
-# rf_final_roc
-# 
-# 
-# #fit finalized workflow with training data
-# fit_final_acc <- fit(rf_final_acc, eel_train)
-# fit_final_roc <- fit(rf_final_roc, eel_train)
-# 
-# #print fitted results
-# fit_final_acc
-# fit_final_roc
-# 
-# #
-# train_predict_acc <- predict(object = fit_final_acc, new_data = eel_train) %>% # predict the training set
-#   bind_cols(eel_train)
-# train_predict_acc 
-# 
-# train_predict_roc <- predict(object = fit_final_acc, new_data = eel_train) %>% # predict the training set
-#   bind_cols(eel_train)
-# 
-# train_metrics2 <- train_predict_acc %>%
-#   metrics(percent, .pred_class) # get testing data metrics
-# 
-# train_metrics2 <- train_predict_roc %>%
-#   metrics(percent, .pred) # get testing data metrics
-
-
 
 ```
 
-Looks like roc_auc curve model is better, uses less trees and has larger metric
+**Answer**: Here, the show_best() function shows that the best metrics is the roc_auc model. Looking at the graph comparing the accuracy and roc_auc models, the roc_auc shows a slightly larger number than the accuracy curve.
+
 
 ### Tune Tree Parameters
 
 1.  Create a new specification where you set the learning rate (which you already optimized) and tune the tree parameters.
 
 ```{r}
+#create a new variable that stores the learning rate
 learn_rate <- tree_learn$learn_rate
 
 #create model setting the learning rate
-eel_xgb_model_learn <- boost_tree(learn_rate = learn_rate, trees = 3000, tree_depth = tune(), min_n = tune(), loss_reduction = tune()) %>% #tuning the learn_rate and trees for the parameter
+eel_xgb_model_learn <- boost_tree(learn_rate = learn_rate, 
+                                  trees = 3000, 
+                                  tree_depth = tune(), 
+                                  min_n = tune(), 
+                                  loss_reduction = tune()) %>% #tuning the learn_rate and trees for the parameter
   set_engine("xgboost") %>%  #nthread = 2
   set_mode("classification")
 
@@ -202,7 +169,8 @@ eel_xgb_workflow_learn <- workflow() %>% #create workflow
   add_model(eel_xgb_model_learn) %>% #add boosted trees model
   add_recipe(eel_recipe)
 
-eel_xgb_workflow_learn
+#look at the workflow
+#eel_xgb_workflow_learn
 ```
 
 2.  Set up a tuning grid. This time use grid_latin_hypercube() to get a representative sampling of the parameter space
@@ -212,42 +180,54 @@ eel_xgb_workflow_learn
 
 grid_2 <- grid_latin_hypercube(tree_depth(), min_n(), loss_reduction())
 
-
+#tune the grid for tree_depth, min_n, and loss_reduction
 system.time(
   eel_xbg_tune_latin <- eel_xgb_workflow_learn %>%
     tune_grid(resamples = cv_folds, grid = grid_2)
 )
 
-eel_xbg_tune_latin
+#save the file
+#save(eel_xbg_tune_latin, file = "rda/eel_xbg_tune_latin.rda")
+
+#load save rda file
+load(file = here::here("week_7", "rda", "eel_xbg_tune_latin.rda"))
+
+#look at tuned model to make sure it has metrics
+#el_xbg_tune_latin
 
 ```
 
-time is 24.28 seconds
+*Answer*: To tune these parameters, it took about 24 seconds to tune all tree_depth, min_n, and loss_reduction.
 
 
 3.  Show the performance of the best models and the estimates for the tree parameter values associated with each.
 
-```{r}
+```{r, warning = FALSE}
 #graph the performance of the tuned model
 autoplot(eel_xbg_tune_latin)
 
-tree_learn_2 <- show_best(eel_xbg_tune_latin, n = 1)
+#find the best model for the tree parameters tuned grid
+tree_param_2 <- show_best(eel_xbg_tune_latin, n = 1)
 
-tree_learn_2
+#look at what was the best model
+tree_param_2
 
-min_n <- tree_learn_2$min_n
-tree_depth <- tree_learn_2$tree_depth
-loss_reduction <- tree_learn_2$loss_reduction
+#set new variable to have the most optimal parameters
+min_n <- tree_param_2$min_n
+tree_depth <- tree_param_2$tree_depth
+loss_reduction <- tree_param_2$loss_reduction
 ```
 
+*Answer*: Here, our best model comes from the roc_auc metric. Listed here, our most optimal min_n is 32, most optimal tree_depth is 9, and most optimal loss_reduction is around 0.226.
 
 ### Tune Stochastic Parameters
 
 1.  Create a new specification where you set the learning rate and tree parameters (which you already optimized) and tune the stochastic parameters.
 
 ```{r}
-#create model
-eel_xgb_model_stoch <- boost_tree(learn_rate = learn_rate, trees = 3000,
+#create model to tune for mtry and sample_size
+eel_xgb_model_stoch <- boost_tree(learn_rate = learn_rate, 
+                                  trees = 3000,
                                   tree_depth = tree_depth,
                                   min_n = min_n,
                                   loss_reduction = loss_reduction,
@@ -261,11 +241,9 @@ eel_xgb_workflow_stoch <- workflow() %>% #create workflow
   add_model(eel_xgb_model_stoch) %>% #add boosted trees model
   add_recipe(eel_recipe) #add recipe
 
-eel_xgb_workflow_stoch
+#look at workflow
+#eel_xgb_workflow_stoch
 
-
-
-#tuning is not working for this part when setting everything in we dont know why. problem is sample size
 ```
 
 
@@ -292,43 +270,129 @@ system.time(
 eel_xbg_tune_stoch
 ```
 
-time it took 19.32
+*Answer*: To tune the stochastic parameters, including mtry() and sample_size(), it took about 20 seconds.
 
 
 3.  Show the performance of the best models and the estimates for the tree parameter values associated with each.
 
 ```{r}
-#
+#graph the performance of the tuned model
 autoplot(eel_xbg_tune_stoch)
 
-#
-tree_learn_3 <- show_best(eel_xbg_tune_stoch, n = 1)
+#find best model from the tuned grid
+tree_stoch_3 <- show_best(eel_xbg_tune_stoch, n = 1)
 
-#
-tree_learn_3
+#look at the best model
+tree_stoch_3
 
 ```
 
+*Answer*: Here, our best model metric is the roc_auc mode. From this model, it states that the most optimal mtry() is 8 while the most optimal sample_size is almost close to 1.
 
 ## Finalize workflow and make final prediction
+####CHECK IN WITH ALLIE####
 
 1.  How well did your model perform? What types of errors did it make?
-```{r}
+```{r, message=FALSE}
+#finalize work flow for our show best model
+rf_final_roc <- finalize_workflow(eel_xgb_workflow_stoch, select_best(eel_xbg_tune_stoch, metric = "roc_auc"))
 
+#print out results
+rf_final_roc
+
+#fit the finalized workflow
+fit_final_roc <- fit(rf_final_roc, eel_train)
+
+#view fitted model
+fit_final_roc
 ```
+
+
+```{r}
+set.seed(50)
+# look at the predicted info for training data for final fitted dataset
+test_predict <- predict(object = fit_final_roc, new_data = eel_test) %>% # predict the training set
+  bind_cols(eel_test)
+#view results
+test_predict
+
+#find metrics of the predicted train data
+train_metrics2 <- test_predict %>%
+  metrics(angaus, .pred_class) # get testing data metrics
+#view metrics results
+train_metrics2
+
+#another way to find the metrics for accuracy model
+#accuracy(train_predict_acc, truth = angaus, estimate = .pred_class)
+
+#another way to find metrics on the testing data
+#fit on both training and testing data, get results from just testing data
+# final_eel <- last_fit(fit_final_roc, eel_split)
+# #look at metrics from final fitted model on testing data
+# collect_metrics(final_eel)
+
+
+
+m2 <- test_predict %>% 
+  conf_mat(truth = angaus, estimate = .pred_class) %>% #create confusion matrix
+  autoplot(type = "heatmap") + #plot confusion matrix with heatmap
+  theme_bw() + #change theme
+  theme(axis.text.x = element_text(angle = 30, hjust=1)) +
+  #rotate axis labels
+  labs(title = "Boosted Trees")
+
+m2
+```
+
+**Answer**: When looking at the performance of my model, I think my model performed very well, as the estimate from the testing data was very close to the estimates to the training data. In order to see what types of errors my model made, I created a confusion matrix. I can see that there are many true negatives that the model marked. However, there are very few true positives that the model marked. It should also be noted that more false positive have been marked verses the false negatives.
 
 
 ## Fit your model the evaluation data and compare performance
 
 1.  Now used your final model to predict on the other dataset (eval.data.csv)
 ```{r}
+#set seed for reproducibility
+set.seed(50)
+
+#split data into 80 20 split
+eel_eval_split <- initial_split(eel_model, prop = .8, strata = angaus) #split data stratified by survived
+
+eel_eval_train <- training(eel_eval_split)#get training data
+eel_eval_test = testing(eel_eval_split) #get testing data
+
+
+#fit the final model on the eval dataset using last_fit function
+final_eel_eval <- last_fit(fit_final_roc, eel_eval_split)
+#look at metrics from final fitted model on testing data
+collect_metrics(final_eel_eval)
 
 ```
 
 
 2.  How does your model perform on this data?
 
+**Answer**: The model performed pretty well on the eval data. For the roc_auc metrics, I get around the same estimate number compared to the other dataset. 
+
 3.  How do your results compare to those of Elith et al.?
+
+**Answer**: When looking at the variable importance on both datasets, the two most important variables that are the same between the two datasets are `seg_sum_t` and `us_native`. After that, the order of variable importance changes slightly between the two but are overall the same. If more of these variable are featured in the area, there is a higher chance that a eel will be present in that area. Another way I interpret the top two important variable is that the summer air temperature and areas with indigenous forest are very important to see if an eel will be found in that area. 
 
 -   Use {vip} to compare variable importance
 -   What do your variable importance results tell you about the distribution of this eel species?
+
+```{r}
+#for model dataset
+fit_final_roc %>% 
+  extract_fit_parsnip() %>% 
+  vip() + 
+  theme_bw() +
+  labs(title = "Variable importance on Model dataset")
+
+#for eval dataset
+final_eel_eval %>% 
+  extract_fit_parsnip() %>% 
+  vip() + 
+  theme_bw() +
+  labs(title = "Variable importance on Eval dataset")
+```
+

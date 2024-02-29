@@ -81,6 +81,7 @@ rf_fit <- fit(rf_final, train) # fit the data to the training data
 ```{r, include=FALSE}
 train_predict <- predict(object = rf_fit, new_data = train) %>% # predict the training set
   bind_cols(train) # bind training set column to prediction
+train_predict
 
 test_predict <- predict(object = rf_fit, new_data = test) %>% # predict the training set
   bind_cols(test) # bind prediction to testing data column
