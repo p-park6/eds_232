@@ -1,0 +1,301 @@
+---
+title: "Lab 8"
+author: "Mateo Robbins"
+date: "2024-03-06"
+output: html_document
+---
+
+## Forest Cover Classification with SVM
+
+In this week's lab we are exploring the use of Support Vector Machines for multi-class classification. Specifically, you will be using cartographic variables to predict forest cover type (7 types).
+
+Natural resource managers responsible for developing ecosystem management strategies require basic descriptive information including inventory data like forest cover type for forested lands to support their decision-making processes. However, managers generally do not have this type of data for in-holdings or neighboring lands that are outside their immediate jurisdiction. One method of obtaining this information is through the use of predictive models.
+
+You task is build both an SVM and a random forest model and compare their performance on accuracy and computation time.
+
+1.  The data is available here: <https://ucsb.box.com/s/ai5ost029enlguqyyn04bnlfaqmp8kn4>
+
+Explore the data.
+
+```{r, warning = FALSE}
+#load in packages
+library(tidyverse)
+library(janitor)
+library(tidymodels)
+library(kernlab)
+```
+
+```{r}
+#set seed for reproducibility
+set.seed(50)
+
+
+#load in data
+covtype <- read_csv("data/covtype_sample.csv") %>% 
+  clean_names() %>% 
+  mutate(cover_type = as.factor(cover_type)) 
+
+
+#split data for random forest----------------
+cov_split <- initial_split(covtype, prop = .7)#, strata = cover_type)
+
+#create train and test data------------------
+cov_train <- training(cov_split)
+cov_test <- testing(cov_split)
+```
+
+
+
+```{r}
+#find the class types of all columns------------
+sapply(covtype, class)
+
+#view histogram of cover_type---------------
+hist(as.numeric(covtype$cover_type))
+```
+
+
+-   What kinds of features are we working with? (COME BACK TO THIS QUESTION)
+
+  **Answer**: The features that we are working with are all in numeric form. Features include elevation, wilderness type, tree species, soil type, etc. These are mentioned in the metadata as datatypes for quantitative, qualitative, and integer classes.
+
+-   Does anything stand out that will affect you modeling choices?
+
+  **Answer**: Briefly glancing at the data, the `Horizontal_Distance_To_Roadways` includes negative numbers in it. This may mess up the modeling choices as it may over account for those in the prediction. Another thing that stands out is the distribution of the outcome variable, particularly for the `Rawah Wilderness Area` column. For this column, instead of it being in binary form, it is in continuous, number form. The outcome variable `cover_type` is also in a numeric form, and not in categorical, which could possibly impact the modeling created. This is why the class of this should be changed into a factor. The final reason, and the most important in my opinion, is that the the observations found in the `cover_type` column are not equally distributed, which will create some bias in the prediction model.
+
+Hint: Pay special attention to the distribution of the outcome variable across the classes.
+
+2.  Create the recipe and carry out any necessary preprocessing. Can you use the same recipe for both models?
+
+  **Answer**: The recipe can be used for both models as we are getting the data ready and prepped to be used in the overall workflow
+
+```{r}
+#------------recipe-----------------
+#create recipe for both model--------
+svm_rec <- recipe(cover_type~., data = cov_train) %>%
+  step_zv(all_predictors()) %>% 
+  step_center(all_numeric()) %>% 
+  step_scale(all_numeric())
+
+
+#-------------SVM model and workflow-------------------
+#create the model for svm linear-----------
+svm_model <- svm_poly(degree = 1, cost = tune()) %>% 
+  set_mode("classification") %>%
+  set_engine("kernlab")
+
+#Bundle into workflow--------------
+svm_workflow <- workflow() %>%
+  add_recipe(svm_rec) %>%
+  add_model(svm_model)
+#svm_workflow
+
+
+#-------------Random Forest model and workflow-------------
+#create model for random forest--------------
+rf_model_cov <- rand_forest(mtry = tune(), trees = tune()) %>% 
+  set_engine("ranger", verbose = TRUE, importance = "impurity") %>% 
+  set_mode("classification") 
+
+#-----------create workflow for random forest-----------------
+rf_wflw_cov <- workflow() %>% 
+  add_model(rf_model_cov) %>% 
+  add_recipe(svm_rec)
+
+```
+
+
+3.  Create the folds for cross-validation.
+
+```{r}
+#----------------create folds for svm--------------------
+data_fold <- vfold_cv(cov_train, v = 10)
+param_grid <- grid_regular(cost(), levels = 10) #create the grid as well
+
+```
+
+
+4.  Tune the models. Choose appropriate parameters and grids. If the computational costs of tuning given your strategy are prohibitive, how might you work around this?
+
+```{r}
+#----------tune model for svm------------
+
+#tune model for svm poly---------
+svm_time <- system.time(svm_tune_cov <- tune_grid(
+  svm_workflow,
+  resamples = data_fold,
+  grid = param_grid)
+)
+
+#save the svm poly rda file created-----------
+#save(svm_tune_cov, file = "rda/svm_tune_cov.rda")
+#load the rda file saved--------
+load(file = here::here("week_9", "rda", "svm_tune_cov.rda"))
+
+#plot the tuned grid for svm-----------
+autoplot(svm_tune_cov)
+
+
+
+#-------------tune model random forest-------------------
+
+# tune the random forest model-----------
+# rf_time <- system.time(rf_cov_tune <- rf_wflw_cov %>%
+#   tune_grid(resamples = data_fold, grid = 5))
+rf_cov_tune
+rf_time
+
+#save the random forest rda file created--------------
+#save(rf_cov_tune, file = "rda/rf_cov_tune.rda")
+#load the rda file saved------------
+load(file = here::here("week_9", "rda", "rf_cov_tune.rda"))
+
+#plot the tuned grid for random forest--------------
+autoplot(rf_cov_tune)
+
+```
+
+5.  Conduct final predictions for both models and compare their prediction performances and computation costs from part 4.
+
+```{r}
+#------------conduct final prediction for SVM RBF------------------
+
+#create the model for svm rbf-------------
+svm_model_rbf <- svm_rbf() %>% 
+  set_mode("classification") %>%
+  set_engine("kernlab")
+
+#create the fit for the rbf model------------------
+svm_rbf_cov_fit <- svm_model_rbf %>%
+  fit(cover_type~., data = cov_train)
+#look at the fit--------------
+svm_rbf_cov_fit
+
+#augment the data and create a conf_mat---------------
+augment(svm_rbf_cov_fit, new_data = cov_test) %>%
+  conf_mat(truth = cover_type, estimate = .pred_class) %>% 
+  autoplot(type = "heatmap") +
+   labs(title = "SVM RBF confusion matrix")
+  
+#find more detailed metrics on the confusion matrix------------------
+caret::confusionMatrix(data = test_predict$.pred_class,
+                reference = test_predict$cover_type,
+                mode = "sens_spec")
+```
+
+
+```{r}
+#------------conduct final prediction for SVM Poly (linear)------------------
+
+#------------finalize the workflow---------------
+
+#finalize workflow for svm poly:---------------
+#select best model-----------------
+best_cost <- select_best(svm_tune_cov, metric = "accuracy")
+#view best cost------------------
+best_cost
+
+#finalize the best model with the best cost------------------
+svm_cov_final <- finalize_workflow(svm_workflow, best_cost)
+#view finalized workflow---------------
+svm_cov_final
+
+#fit the final best cost model to the data---------------
+svm_cov_final_fit <- svm_linear_final %>% fit(cov_train)
+#view final fit-------------------
+svm_cov_final_fit
+
+
+#----------------predict and find metrics----------------
+
+#predict on the testing data---------------
+svm_cov_predict_test <- predict(object = svm_cov_final_fit, new_data = cov_test) %>% # predict the training set
+  bind_cols(cov_test) # bind training set column to prediction
+#view predicted data----------------
+svm_cov_predict_test
+
+#find metrics on the predicted test---------------
+svm_cov_test_metrics <- svm_cov_predict_test %>%
+  metrics(cover_type, .pred_class) # get testing data metrics
+#view metrics-----------------
+svm_cov_test_metrics
+
+
+#---------------finding performance on model-------------------
+#possible ways to see the model's performance:----------------
+#Examine model performance via confusion matrix-----------------
+augment(svm_cov_final_fit, new_data = cov_test) %>%
+  conf_mat(truth = cover_type, estimate = .pred_class) %>% 
+  autoplot(type = "heatmap") +
+   labs(title = "svm linear confusion matrix")
+
+#find more detailed metrics on the confusion matrix----------------
+caret::confusionMatrix(data = svm_cov_predict_test$.pred_class,
+                reference = svm_cov_predict_test$cover_type,
+                mode = "sens_spec")
+
+#ROC curves
+#We can examine our model's performance using ROC and AUC
+augment(svm_cov_final_fit, new_data = cov_test) %>%
+  roc_curve(truth = cover_type, .pred_class) %>%
+  autoplot()
+
+augment(svm_cov_final_fit, new_data = cov_test) %>%
+  roc_auc(truth = cover_type, .pred_class)
+```
+
+```{r}
+#------------------for random forest------------------------
+
+#collect metrics
+collect_metrics(rf_cv)
+
+show_best(rf_cv, n = 1, metric = "roc_auc")
+
+#finalize workflow for random forest
+rf_final <- finalize_workflow(rf_wflw, select_best(rf_cv, metric = "roc_auc"))
+
+rf_fit <- fit(rf_final, cov_train) # fit the data to the training data
+
+
+#done on both training and testing data to see how well the model did within this dataset
+train_predict <- predict(object = rf_fit, new_data = cov_train) %>% # predict the training set
+  bind_cols(cov_train) # bind training set column to prediction
+train_predict
+
+test_predict <- predict(object = rf_fit, new_data = cov_test) %>% # predict the training set
+  bind_cols(cov_test) # bind prediction to testing data column
+test_predict
+
+train_metrics <- train_predict %>%
+  metrics(cover_type, .pred_class) # get testing data metrics
+train_metrics
+
+test_metrics <- test_predict %>%
+  metrics(cover_type, .pred_class) # get testing data metrics
+test_metrics
+
+accuracy(train_predict, truth = cover_type, estimate = .pred_class)
+accuracy(test_predict, truth = cover_type, estimate = .pred_class)
+
+
+augment(rf_fit, new_data = cov_test) %>%
+  conf_mat(truth = cover_type, estimate = .pred_class) %>% 
+  autoplot(type = "heatmap") +
+   labs(title = "Random forest confusion matrix")
+
+test_roc_auc_rf = roc_curve(test_predict, cover_type, .pred_class)
+test_roc_auc_rf
+
+
+
+caret::confusionMatrix(data = test_predict$.pred_class,
+                reference = test_predict$cover_type,
+                mode = "sens_spec")
+
+```
+
+
+-   Which type of model do you think is better for this task?
+  probably the svm model
+-   Why do you speculate this is the case?

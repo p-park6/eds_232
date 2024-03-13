@@ -38,6 +38,8 @@ recipe <- recipe(percent ~ region + area + total_pop_10 + median_income_10 + pov
   step_interact(terms = ~total_pop_10:median_income_10) %>% 
   step_interact(terms = ~total_pop_10:poverty_level_10) %>% 
   step_interact(terms = ~poverty_level_10:median_income_10) 
+
+recipe
 ```
 
 ### Model: Random forest Regression
